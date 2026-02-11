@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'screens/home_screen.dart';
+import 'package:kitahack_app/screens/home_screen.dart';
 
 void main() async {
 
@@ -8,7 +8,7 @@ void main() async {
 
   await Firebase.initializeApp();
 
-  runApp(const ResilienceBuilderApp())
+  runApp(const ResilienceBuilderApp());
 }
 
 class ResilienceBuilderApp extends StatelessWidget {
