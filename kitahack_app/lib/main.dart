@@ -1,7 +1,8 @@
 import 'package:flutter/foundation.dart'; // Required for kIsWeb
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'screens/home_screen.dart'; // Ensure this matches your folder structure
+import 'screens/home_screen.dart';
+import 'screens/dashboard_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -10,7 +11,6 @@ void main() async {
     // WEB SETUP (Chrome)
     await Firebase.initializeApp(
       options: const FirebaseOptions(
-        // TODO: PASTE YOUR KEYS HERE FROM google-services.json
         apiKey: "AIzaSyBNG3DRJYnzFi_mB4nIByoWAc22f86cTTI", 
         appId: "1:482793649864:android:aa9025b31a12931e9657fd", 
         messagingSenderId: "482793649864", 
@@ -37,7 +37,7 @@ class ResilienceBuilderApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.redAccent),
         useMaterial3: true,
       ),
-      home: const HomeScreen(),
+      home: const DashboardScreen(),
     );
   }
 }
