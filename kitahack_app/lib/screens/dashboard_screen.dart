@@ -1,5 +1,8 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:image_picker/image_picker.dart';
+import '../services/gemini_service.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -9,9 +12,77 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-  static const LatLng _klCenter = LatLng(3.1390, 101.6869);
-
+  static const LatLng _klCenter = LatLng(3.065203, 101.600990);
   bool _isRescuerMode = false;
+
+  // MAP STATE
+  late GoogleMapController _mapController;
+  final Set<Marker> _markers = {};
+  bool _isAnalyzing = false;
+
+  // SERVICES
+  final GeminiService _geminiService = GeminiService();
+  final ImagePicker _picker = ImagePicker();
+
+  void _onMapCreated(GoogleMapController controller) {
+    _mapController = controller;
+  }
+
+  // ---- THE CORE LOGIC: CAMERA -> AI -> MAP ----
+  Future<void> _handleReportFlood() async {
+    // 1. Pick Image
+    final XFile? photo = await _picker.pickImage(source: ImageSource.camera);
+    if (photo == null) return;
+
+    setState(() => _isAnalyzing = true);
+
+    // 2. Send to Gemini
+    try {
+      final result = await _geminiService.analyzeFloodImage(File(photo.path));
+
+      if (result['isFlood'] == true) {
+        // 3. If Flood Confirmed, Add Marker
+        _addFloodMarker(result);
+        _showResultDialog("DANGER CONFIRMED", "Severity: ${result['severity']}/5\n${result['description']}", true);
+      } else {
+        _showResultDialog("Safe", "Gemini did not detect a flood.", false);
+      } 
+    } catch (e) {
+      _showResultDialog("Error", "Could not analyze image. Try again.", false);
+    } finally {
+      setState(() => _isAnalyzing = false);
+    }
+  }
+
+  void _addFloodMarker(Map<String, dynamic> data) {
+    setState(() {
+      _markers.add(
+        Marker(
+          markerId: MarkerId(DateTime.now().toString()),
+          position: _klCenter,
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+          infoWindow: InfoWindow(
+            title: "CONFIRMED FLOOD (Level ${data['severity']})",
+            snippet: data['description'],
+          ),
+        ),
+      );
+    });
+  }
+
+  void _showResultDialog(String title, String body, bool isDanger) {
+    showDialog(
+      context: context, 
+      builder: (ctx) => AlertDialog(
+        title: Text(title, style: TextStyle(color: isDanger ? Colors.red : Colors.green)),
+        content: Text(body),
+        actions: [TextButton(
+          onPressed: () => Navigator.pop(ctx), 
+          child: const Text("OK"))
+        ],
+      )
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -29,7 +100,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
             markers: {},
           ),
 
-          // 2: THE ROLE SWITCHER
+          // 2: LOADING OVERLAY
+          if (_isAnalyzing)
+            Container(
+              color: Colors.black54,
+              child: const Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(color: Colors.white),
+                    SizedBox(height: 20),
+                    Text("Gemini AI is analyzing...", 
+                      style: TextStyle(color: Colors.white, fontSize: 18)
+                    )
+                  ],
+                ),
+              ),
+            ), 
+
+          // 3: THE ROLE SWITCHER
           SafeArea(
             child: Align(
               alignment: Alignment.topCenter,
@@ -141,7 +230,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
   // ---- UI FOR CIVILIAN MODE ----
   Widget _buildUserControls() {
     return Column(
-      mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
         // Chatbot Floating Button
@@ -175,10 +263,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(15)),
             ),
-            onPressed: () {
-              // TODO: Open Camera & Gemini Version
-              print("Open Camera for AI Verification");
-            },
+            onPressed: _handleReportFlood,
           ),
         ),
       ],
