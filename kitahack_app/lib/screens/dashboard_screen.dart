@@ -12,13 +12,16 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-  static const LatLng _klCenter = LatLng(3.065203, 101.600990);
+  static const LatLng _klCenter = LatLng(3.1390, 101.6869);
+
   bool _isRescuerMode = false;
+  bool _isAnalyzing = false;
 
   // MAP STATE
   late GoogleMapController _mapController;
   final Set<Marker> _markers = {};
-  bool _isAnalyzing = false;
+  final Set<Polyline> _polylines = {};
+  final Set<Circle> _circles = {};
 
   // SERVICES
   final GeminiService _geminiService = GeminiService();
@@ -26,9 +29,27 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   void _onMapCreated(GoogleMapController controller) {
     _mapController = controller;
+    _setupSimulatedData();
   }
 
-  // ---- THE CORE LOGIC: CAMERA -> AI -> MAP ----
+  // ---- PHASE 1: MOCK DATA SETUP ----
+  void _setupSimulatedData() {
+    setState(() {
+      // Draw a "Red Zone"
+      _circles.add(
+        Circle(
+          circleId: const CircleId("flood_zone"),
+          center: const LatLng(3.1495, 101.6960),
+          radius: 150,
+          fillColor: Colors.red.withValues(alpha: 0.5),
+          strokeColor: Colors.red,
+          strokeWidth: 2,
+        ),
+      );
+    });
+  }
+
+  // ---- PHASE 2: VISUAL INTELLIGENCE (CAMERA) ----
   Future<void> _handleReportFlood() async {
     // 1. Pick Image
     final XFile? photo = await _picker.pickImage(source: ImageSource.camera);
@@ -43,12 +64,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
       if (result['isFlood'] == true) {
         // 3. If Flood Confirmed, Add Marker
         _addFloodMarker(result);
-        _showResultDialog("DANGER CONFIRMED", "Severity: ${result['severity']}/5\n${result['description']}", true);
+        _showDialog("DANGER CONFIRMED", "Severity: ${result['severity']}/5\n${result['description']}", true);
       } else {
-        _showResultDialog("Safe", "Gemini did not detect a flood.", false);
+        _showDialog("Safe", "Gemini did not detect a flood.", false);
       } 
     } catch (e) {
-      _showResultDialog("Error", "Could not analyze image. Try again.", false);
+      _showDialog("Error", "Could not analyze image. Try again.", false);
     } finally {
       setState(() => _isAnalyzing = false);
     }
@@ -70,7 +91,149 @@ class _DashboardScreenState extends State<DashboardScreen> {
     });
   }
 
-  void _showResultDialog(String title, String body, bool isDanger) {
+  // ---- PHASE 3: SAFETY CHATBOT ----
+  void _openSafetyChat() {
+    TextEditingController _msgController = TextEditingController();
+    List<Map<String, String>> chatHistory = [
+      {"role": "ai", "msg": "I am the KL Crisis Assistant. Are you safe?"}
+    ];
+
+    showModalBottomSheet(
+      context: context, 
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setSheetState) => Container(
+          height: MediaQuery.of(context).size.height * 0.7,
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(25))
+          ),
+          child: Column(
+            children: [
+              // Chat Header
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.red[50],
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(25))
+                ),
+                child: Row(
+                  children: const [
+                    Icon(Icons.shield, color: Colors.red),
+                    SizedBox(width: 10),
+                    Text(
+                      "Official Safety AI (NADMA)", 
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold, 
+                        color: Colors.red)
+                    ),
+                  ],
+                ),
+              ),
+              // Chat List
+              Expanded(
+                child: ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: chatHistory.length,
+                  itemBuilder: (ctx, i) {
+                    final isAi = chatHistory[i]["role"] == "ai";
+                    return Align(
+                      alignment: 
+                        isAi ? Alignment.centerLeft : Alignment.centerRight,
+                      child: Container(
+                        margin: const EdgeInsets.only(bottom: 10),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: isAi ? Colors.grey[200] : Colors.blue[100],
+                          borderRadius: BorderRadius.circular(15)
+                        ),
+                        child: Text(chatHistory[i]["msg"]!),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              // Input Field
+              Padding(
+                padding: EdgeInsets.only(
+                  bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+                  left: 16,
+                  right: 16
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _msgController,
+                        decoration: const InputDecoration(
+                          hintText: "Ask for help...",
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.all(Radius.circular(50))
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    FloatingActionButton.small(
+                      backgroundColor: Colors.red,
+                      child: const Icon(Icons.send, color: Colors.white),
+                      onPressed: () async {
+                        final text = _msgController.text.trim();
+                        if (text.isEmpty) return;
+
+                        setSheetState(() {
+                          chatHistory.add({"role": "user", "msg": text});
+                          _msgController.clear();
+                        });
+
+                        final reply = await _geminiService.getSafetyAdvice(text);
+
+                        setSheetState(() => 
+                          chatHistory.add({"role": "ai", "msg": reply}));
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ---- PHASE 4: RESCUE SIMULATION (THE RED LINE) ----
+  void _handleRescueRoute() async {
+    setState(() => _isAnalyzing = true);
+    await Future.delayed(const Duration(seconds: 2)); // Fake calculation time
+
+    setState(() {
+      _isAnalyzing = false;
+      // Draw a Blue Route avoiding the Red Circle
+      _polylines.add(
+        Polyline(
+          polylineId: const PolylineId("safe_route"),
+          color: Colors.blue,
+          width: 5,
+          points: const [
+            LatLng(3.1390, 101.6869), // Start: KLCC
+            LatLng(3.1420, 101.6900),
+            LatLng(3.1480, 101.6920), // Waypoint: Avoiding the flood
+            LatLng(3.1500, 101.6950), // End: Near Masjid Jamek
+          ],
+        ),
+      );
+    });
+
+    _showDialog(
+      "ROUTE CALCULATED", 
+      "Optimal path found. Avoiding 1 critical zone.", 
+      false);
+  }
+
+  void _showDialog(String title, String body, bool isDanger) {
     showDialog(
       context: context, 
       builder: (ctx) => AlertDialog(
@@ -90,14 +253,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
       body: Stack(
         children: [
           // 1: THE GOOGLE MAP BASE LAYER
-          GoogleMap(initialCameraPosition: const CameraPosition(
-            target: _klCenter,
-            zoom: 14
-            ),
-            mapType: MapType.normal,
-            myLocationEnabled: true,
+          GoogleMap(
+            onMapCreated: _onMapCreated,
+            initialCameraPosition: const CameraPosition(
+              target: _klCenter,
+              zoom: 15),
+            markers: _markers,
+            circles: _circles,
+            polylines: _polylines,
+            //mapType: MapType.normal,
+            //myLocationEnabled: true,
             zoomControlsEnabled: false,
-            markers: {},
           ),
 
           // 2: LOADING OVERLAY
@@ -105,16 +271,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
             Container(
               color: Colors.black54,
               child: const Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    CircularProgressIndicator(color: Colors.white),
-                    SizedBox(height: 20),
-                    Text("Gemini AI is analyzing...", 
-                      style: TextStyle(color: Colors.white, fontSize: 18)
-                    )
-                  ],
-                ),
+                child: CircularProgressIndicator(color: Colors.white),
+                // child: Column(
+                //   mainAxisSize: MainAxisSize.min,
+                //   children: [
+                //     CircularProgressIndicator(color: Colors.white),
+                //     SizedBox(height: 20),
+                //     Text("Gemini AI is analyzing...", 
+                //       style: TextStyle(color: Colors.white, fontSize: 18)
+                //     )
+                //   ],
+                // ),
               ),
             ), 
 
@@ -122,54 +289,92 @@ class _DashboardScreenState extends State<DashboardScreen> {
           SafeArea(
             child: Align(
               alignment: Alignment.topCenter,
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(30),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black26, 
-                        blurRadius: 10, 
-                        offset: Offset(0, 4))
-                    ],
-                  ),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 20, 
-                    vertical: 8
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text("Civilian",
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: _isRescuerMode ? Colors.grey : Colors.blue)
-                      ),
-                      Switch(
-                        value: _isRescuerMode, 
-                        activeThumbColor: Colors.red,
-                        inactiveThumbColor: Colors.blue,
-                        onChanged: (val) {
-                          setState(() {
-                            _isRescuerMode = val;
-                          });
-                        },
-                      ),
-                      Text("Rescuer",
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: _isRescuerMode ? Colors.red : Colors.grey)
-                      ),
-                    ],
-                  ),
+              child: Container(
+                margin: const EdgeInsets.only(top: 10),
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(30),
+                  boxShadow: [
+                    const BoxShadow(blurRadius: 10, color: Colors.black26)]
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text("Civilian",
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: !_isRescuerMode ? Colors.blue : Colors.grey
+                      )
+                    ),
+                    Switch(
+                      value: _isRescuerMode,
+                      activeThumbColor: Colors.red, 
+                      onChanged: (val) => setState(() => _isRescuerMode = val),
+                    ),
+                    Text("Rescuer",
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: _isRescuerMode ? Colors.red : Colors.grey
+                      )
+                    ),
+                  ],
                 ),
               ),
             ),
           ),
+          // SafeArea(
+          //   child: Align(
+          //     alignment: Alignment.topCenter,
+          //     child: Padding(
+          //       padding: const EdgeInsets.all(16.0),
+          //       child: Container(
+          //         decoration: BoxDecoration(
+          //           color: Colors.white,
+          //           borderRadius: BorderRadius.circular(30),
+          //           boxShadow: [
+          //             BoxShadow(
+          //               color: Colors.black26, 
+          //               blurRadius: 10, 
+          //               offset: Offset(0, 4))
+          //           ],
+          //         ),
+          //         padding: const EdgeInsets.symmetric(
+          //           horizontal: 20, 
+          //           vertical: 8
+          //         ),
+          //         child: Row(
+          //           mainAxisSize: MainAxisSize.min,
+          //           children: [
+          //             Text("Civilian",
+          //               style: TextStyle(
+          //                 fontWeight: FontWeight.bold,
+          //                 color: _isRescuerMode ? Colors.grey : Colors.blue)
+          //             ),
+          //             Switch(
+          //               value: _isRescuerMode, 
+          //               activeThumbColor: Colors.red,
+          //               inactiveThumbColor: Colors.blue,
+          //               onChanged: (val) {
+          //                 setState(() {
+          //                   _isRescuerMode = val;
+          //                 });
+          //               },
+          //             ),
+          //             Text("Rescuer",
+          //               style: TextStyle(
+          //                 fontWeight: FontWeight.bold,
+          //                 color: _isRescuerMode ? Colors.red : Colors.grey)
+          //             ),
+          //           ],
+          //         ),
+          //       ),
+          //     ),
+          //   ),
+          // ),
 
-          // 3: THE ACTION PANEL
+
+          // 4: THE ACTION PANEL
           Positioned(
             bottom: 30,
             left: 20,
@@ -192,29 +397,26 @@ class _DashboardScreenState extends State<DashboardScreen> {
         boxShadow: [const BoxShadow(blurRadius: 15, color: Colors.black26)],
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        //crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: const [
-              Icon(Icons.warning_amber_rounded, color: Colors.red, size: 30),
+              Icon(Icons.warning, color: Colors.red),
               SizedBox(width: 10),
               Text("COMMAND CENTER", style: TextStyle(
-                fontWeight: FontWeight.bold, fontSize: 18)),
-            ],
-          ),
+                fontWeight: FontWeight.bold, fontSize: 16)),
+            ]),
           const Divider(),
           const ListTile(
             contentPadding: EdgeInsets.zero,
-            title: Text("CRITICAL: Masjid Jamek Area"),
-            subtitle: Text("Water Level: 1.5m (Rising Fast)"),
-            trailing: Text("70% Chance", style: TextStyle(
+            title: Text("Masjid Jamek (Zone A)"),
+            subtitle: Text("Water Depth: 1.2m"),
+            trailing: Text("CRITICAL", style: TextStyle(
               color: Colors.red, fontWeight: FontWeight.bold)),
           ),
-          const SizedBox(height: 10),
+          //const SizedBox(height: 10),
           ElevatedButton(
-            onPressed: () {
-              // TODO: Call Google Routes API
-            },
+            onPressed: _handleRescueRoute,
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.red[800],
               foregroundColor: Colors.white,
@@ -234,12 +436,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       children: [
         // Chatbot Floating Button
         FloatingActionButton.extended(
-          onPressed: () {
-            // TODO: Link to Gemini Chatbot
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text("Opening AI Safety Assistant...")),
-            );
-          }, 
+          onPressed: _openSafetyChat, 
           label: const Text("Safety AI"),
           icon: const Icon(Icons.chat_bubble),
           backgroundColor: Colors.blueAccent,
@@ -257,9 +454,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
               backgroundColor: Colors.orange,
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(vertical: 16),
-              textStyle: const TextStyle(
-                fontSize: 16, 
-                fontWeight: FontWeight.bold),
+              // textStyle: const TextStyle(
+              //   fontSize: 16, 
+              //   fontWeight: FontWeight.bold),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(15)),
             ),
