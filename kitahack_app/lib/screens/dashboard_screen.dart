@@ -5,7 +5,9 @@ import 'package:image_picker/image_picker.dart';
 import '../services/gemini_service.dart';
 
 class DashboardScreen extends StatefulWidget {
-  const DashboardScreen({super.key});
+  final bool isRescuerMode;
+
+  const DashboardScreen({super.key, required this.isRescuerMode});
 
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
@@ -14,8 +16,15 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   static const LatLng _klCenter = LatLng(3.1390, 101.6869);
 
-  bool _isRescuerMode = false;
   bool _isAnalyzing = false;
+
+  late bool _isRescuerMode;
+
+  @override
+  void initState() {
+    super.initState();
+    _isRescuerMode = widget.isRescuerMode;
+  }
 
   // MAP STATE
   late GoogleMapController _mapController;
@@ -286,43 +295,43 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ), 
 
           // 3: THE ROLE SWITCHER
-          SafeArea(
-            child: Align(
-              alignment: Alignment.topCenter,
-              child: Container(
-                margin: const EdgeInsets.only(top: 10),
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(30),
-                  boxShadow: [
-                    const BoxShadow(blurRadius: 10, color: Colors.black26)]
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text("Civilian",
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: !_isRescuerMode ? Colors.blue : Colors.grey
-                      )
-                    ),
-                    Switch(
-                      value: _isRescuerMode,
-                      activeThumbColor: Colors.red, 
-                      onChanged: (val) => setState(() => _isRescuerMode = val),
-                    ),
-                    Text("Rescuer",
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: _isRescuerMode ? Colors.red : Colors.grey
-                      )
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
+          // SafeArea(
+          //   child: Align(
+          //     alignment: Alignment.topCenter,
+          //     child: Container(
+          //       margin: const EdgeInsets.only(top: 10),
+          //       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+          //       decoration: BoxDecoration(
+          //         color: Colors.white,
+          //         borderRadius: BorderRadius.circular(30),
+          //         boxShadow: [
+          //           const BoxShadow(blurRadius: 10, color: Colors.black26)]
+          //       ),
+          //       child: Row(
+          //         mainAxisSize: MainAxisSize.min,
+          //         children: [
+          //           Text("Civilian",
+          //             style: TextStyle(
+          //               fontWeight: FontWeight.bold,
+          //               color: !_isRescuerMode ? Colors.blue : Colors.grey
+          //             )
+          //           ),
+          //           Switch(
+          //             value: _isRescuerMode,
+          //             activeThumbColor: Colors.red, 
+          //             onChanged: (val) => setState(() => _isRescuerMode = val),
+          //           ),
+          //           Text("Rescuer",
+          //             style: TextStyle(
+          //               fontWeight: FontWeight.bold,
+          //               color: _isRescuerMode ? Colors.red : Colors.grey
+          //             )
+          //           ),
+          //         ],
+          //       ),
+          //     ),
+          //   ),
+          // ),
           // SafeArea(
           //   child: Align(
           //     alignment: Alignment.topCenter,
