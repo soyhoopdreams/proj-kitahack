@@ -16,14 +16,14 @@ class RoleSelectionScreen extends StatelessWidget {
             children: [
               const SizedBox(height: 40),
               // APP TITLE
-              Text("Resilience\nBuilder",
+              Text("Flood\nMapr",
                 style: Theme.of(context).textTheme.displaySmall?.copyWith(
                   fontWeight: FontWeight.bold,
                   color: Colors.blueAccent[700]
                 ),
               ),
               const Text(
-                "Kuala Lumpur Crisis Response", 
+                "Malaysia Flood Crisis Response", 
                 style: TextStyle(color: Colors.grey)),
               const Spacer(),
 

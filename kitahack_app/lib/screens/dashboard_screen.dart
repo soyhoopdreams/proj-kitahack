@@ -36,6 +36,39 @@ class _DashboardScreenState extends State<DashboardScreen> {
   final GeminiService _geminiService = GeminiService();
   final ImagePicker _picker = ImagePicker();
 
+  // DARK MODE
+  final String _darkMapStyle = '''
+  [
+    {
+      "elementType": "geometry",
+      "stylers": [{"color": "#242f3e"}]
+    },
+    {
+      "elementType": "labels.text.fill",
+      "stylers": [{"color": "#746855"}]
+    },
+    {
+      "elementType": "labels.text.stroke",
+      "stylers": [{"color": "#242f3e"}]
+    },
+    {
+      "featureType": "administrative.locality",
+      "elementType": "labels.text.fill",
+      "stylers": [{"color": "#d59563"}]
+    },
+    {
+      "featureType": "road",
+      "elementType": "geometry",
+      "stylers": [{"color": "#38414e"}]
+    },
+    {
+      "featureType": "water",
+      "elementType": "geometry",
+      "stylers": [{"color": "#17263c"}]
+    }
+  ]
+  ''';
+
   void _onMapCreated(GoogleMapController controller) {
     _mapController = controller;
     _setupSimulatedData();
@@ -137,6 +170,28 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       style: TextStyle(
                         fontWeight: FontWeight.bold, 
                         color: Colors.red)
+                    ),
+                  ],
+                ),
+              ),
+              // Ethical Guardrail Banner
+              Container(
+                width: double.infinity,
+                color: Colors.amber[100],
+                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+                child: Row(
+                  children: const [
+                    Icon(Icons.info_outline, size: 16, color: Colors.brown),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        "AI can make mistakes. In life-threatening emergencies, call 999 immediately.",
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.brown,
+                          fontWeight: FontWeight.bold
+                        ),
+                      )
                     ),
                   ],
                 ),
@@ -271,6 +326,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             circles: _circles,
             polylines: _polylines,
             zoomControlsEnabled: false,
+            style: _darkMapStyle,
           ),
 
           // 2: LOADING OVERLAY

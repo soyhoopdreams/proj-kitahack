@@ -61,7 +61,12 @@ class GeminiService {
       final response = await model.generateContent([Content.text(userMessage)]);
       return response.text ?? "System Error. Evacuate to high ground.";
     } catch (e) {
-      return "Connection unstable. Seek high ground immediately.";
+      return "⚠️ OFFLINE MODE: Network unreachable.\n\n"
+             "OFFICIAL FLOOD PROTOCOL:\n"
+             "1. Turn off electricity immediately.\n"
+             "2. Move to the highest floor.\n"
+             "3. Do not walk through moving water.\n"
+             "4. Keep this phone dry for emergency signal.";
     }
   }
 }
