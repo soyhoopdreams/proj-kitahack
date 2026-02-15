@@ -270,8 +270,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
             markers: _markers,
             circles: _circles,
             polylines: _polylines,
-            //mapType: MapType.normal,
-            //myLocationEnabled: true,
             zoomControlsEnabled: false,
           ),
 
@@ -281,106 +279,58 @@ class _DashboardScreenState extends State<DashboardScreen> {
               color: Colors.black54,
               child: const Center(
                 child: CircularProgressIndicator(color: Colors.white),
-                // child: Column(
-                //   mainAxisSize: MainAxisSize.min,
-                //   children: [
-                //     CircularProgressIndicator(color: Colors.white),
-                //     SizedBox(height: 20),
-                //     Text("Gemini AI is analyzing...", 
-                //       style: TextStyle(color: Colors.white, fontSize: 18)
-                //     )
-                //   ],
-                // ),
               ),
             ), 
 
-          // 3: THE ROLE SWITCHER
-          // SafeArea(
-          //   child: Align(
-          //     alignment: Alignment.topCenter,
-          //     child: Container(
-          //       margin: const EdgeInsets.only(top: 10),
-          //       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-          //       decoration: BoxDecoration(
-          //         color: Colors.white,
-          //         borderRadius: BorderRadius.circular(30),
-          //         boxShadow: [
-          //           const BoxShadow(blurRadius: 10, color: Colors.black26)]
-          //       ),
-          //       child: Row(
-          //         mainAxisSize: MainAxisSize.min,
-          //         children: [
-          //           Text("Civilian",
-          //             style: TextStyle(
-          //               fontWeight: FontWeight.bold,
-          //               color: !_isRescuerMode ? Colors.blue : Colors.grey
-          //             )
-          //           ),
-          //           Switch(
-          //             value: _isRescuerMode,
-          //             activeThumbColor: Colors.red, 
-          //             onChanged: (val) => setState(() => _isRescuerMode = val),
-          //           ),
-          //           Text("Rescuer",
-          //             style: TextStyle(
-          //               fontWeight: FontWeight.bold,
-          //               color: _isRescuerMode ? Colors.red : Colors.grey
-          //             )
-          //           ),
-          //         ],
-          //       ),
-          //     ),
-          //   ),
-          // ),
-          // SafeArea(
-          //   child: Align(
-          //     alignment: Alignment.topCenter,
-          //     child: Padding(
-          //       padding: const EdgeInsets.all(16.0),
-          //       child: Container(
-          //         decoration: BoxDecoration(
-          //           color: Colors.white,
-          //           borderRadius: BorderRadius.circular(30),
-          //           boxShadow: [
-          //             BoxShadow(
-          //               color: Colors.black26, 
-          //               blurRadius: 10, 
-          //               offset: Offset(0, 4))
-          //           ],
-          //         ),
-          //         padding: const EdgeInsets.symmetric(
-          //           horizontal: 20, 
-          //           vertical: 8
-          //         ),
-          //         child: Row(
-          //           mainAxisSize: MainAxisSize.min,
-          //           children: [
-          //             Text("Civilian",
-          //               style: TextStyle(
-          //                 fontWeight: FontWeight.bold,
-          //                 color: _isRescuerMode ? Colors.grey : Colors.blue)
-          //             ),
-          //             Switch(
-          //               value: _isRescuerMode, 
-          //               activeThumbColor: Colors.red,
-          //               inactiveThumbColor: Colors.blue,
-          //               onChanged: (val) {
-          //                 setState(() {
-          //                   _isRescuerMode = val;
-          //                 });
-          //               },
-          //             ),
-          //             Text("Rescuer",
-          //               style: TextStyle(
-          //                 fontWeight: FontWeight.bold,
-          //                 color: _isRescuerMode ? Colors.red : Colors.grey)
-          //             ),
-          //           ],
-          //         ),
-          //       ),
-          //     ),
-          //   ),
-          // ),
+          // 3: TOP BAR (BACK BUTTON + MODE INDICATOR)
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsetsGeometry.symmetric(horizontal: 16, vertical: 10),
+              child: Row(
+                children: [
+                  // Back Button
+                  FloatingActionButton.small(
+                    heroTag: "back_btn",
+                    backgroundColor: Colors.white,
+                    child: const Icon(Icons.arrow_back, color: Colors.black87),
+                    onPressed: () {
+                      Navigator.pop(context);
+                    },
+                  ),
+
+                  const Spacer(),
+
+                  // Mode Label
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(30),
+                      boxShadow: [const BoxShadow(blurRadius: 10, color: Colors.black26)],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          _isRescuerMode ? Icons.shield : Icons.person,
+                          color: _isRescuerMode ? Colors.red : Colors.blue,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          _isRescuerMode ? "RESCUER MODE" : "CIVILIAN MODE",
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: _isRescuerMode ? Colors.red : Colors.blue
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
 
 
           // 4: THE ACTION PANEL
