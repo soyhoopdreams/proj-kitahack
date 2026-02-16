@@ -42,6 +42,7 @@ dependencies:
 
   # 3. AI (The Brains)
   google_generative_ai: ^0.4.7
+  flutter_dotenv: ^6.0.0
 
   # 4. Utilities
   image_picker: ^1.2.1
@@ -73,6 +74,8 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+  assets:
+    - .env
 
   # To add assets to your application, add an assets section, like this:
   # assets:

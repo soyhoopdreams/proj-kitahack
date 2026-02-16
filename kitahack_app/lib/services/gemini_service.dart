@@ -1,15 +1,20 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
 
 class GeminiService {
-  static const String _apiKey = 'AIzaSyA9V4Z6jkq3y61R6xa85jiCgZ4rOQoFOb0';
+  static String? _apiKey = dotenv.env['GEMINI_API_KEY'];
 
   // ---- 1: VISION: ANALYZE FLOOD IMAGES ----
   Future<Map<String, dynamic>> analyzeFloodImage(File imageFile) async {
+    if (_apiKey == null) {
+      throw Exception("API Key not found in .env file");
+    }
+
     final model = GenerativeModel(
-      model: 'gemini-3-pro-preview',
-      apiKey: _apiKey,
+      model: 'gemini-2.5-flash',
+      apiKey: _apiKey!,
     );
 
     final prompt = TextPart(
@@ -43,17 +48,27 @@ class GeminiService {
 
   // ---- 2: CHAT: SAFETY ADVISOR ----
   Future<String> getSafetyAdvice(String userMessage) async {
+    if (_apiKey == null) {
+      throw Exception("API Key not found in .env file");
+    }
+    
     final model = GenerativeModel(
-      model: 'gemini-3-pro-preview', 
-      apiKey: _apiKey,
+      model: 'gemini-2.5-flash', 
+      apiKey: _apiKey!,
       // CRITICAL: System Instruction for Safety
       systemInstruction: Content.system(
-        "You are a strict Flood Safety Officer (NADMA Malaysia compliant). "
-        "Rules: "
-        "1. If water is rising, tell users to seek high ground immediately. "
-        "2. Do NOT give medical advice; tell them to call 999. "
-        "3. Keep answers under 2 sentences. Be urgent."
-        "4. If asked about driving through water, say NO."
+        "You are the official AI Crisis Response Officer for Kuala Lumpur, Malaysia. "
+        "Your responses must align with NADMA (National Disaster Management Agency) and Bomba guidelines. "
+        
+        "CRITICAL RULES:"
+        "1. TONE: Urgent, authoritative, and direct. No polite filler like 'I hope you are safe'."
+        "2. LOCATION AWARENESS: If the user mentions 'Masjid Jamek' or 'Kampung Baru', prioritize flash flood warnings."
+        "3. PROHIBITIONS: Never suggest driving through water. Never give medical prescriptions (only First Aid)."
+        "4. LANGUAGE: Use simple English mixed with common Malaysian terms if needed (e.g., 'Move to higher ground', 'Avoid longkang')."
+        
+        "SCENARIO RESPONSES:"
+        "- If stuck in car: 'Abandon vehicle immediately. Climb to high ground. Do not wait.'"
+        "- If water rising in house: 'Switch off main power (TNB). Move family to roof/highest floor. Hang white cloth if trapped.'"
       ),
     );
 
