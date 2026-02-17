@@ -2,7 +2,9 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:kitahack_app/services/flood_state.dart';
 import '../services/gemini_service.dart';
+import '../services/flood_state.dart';
 
 class DashboardScreen extends StatefulWidget {
   final bool isRescuerMode;
@@ -24,6 +26,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void initState() {
     super.initState();
     _isRescuerMode = widget.isRescuerMode;
+    _markers.addAll(FloodState.sharedMarkers);
   }
 
   // MAP STATE
@@ -119,18 +122,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   void _addFloodMarker(Map<String, dynamic> data) {
+    final newMarker = Marker(
+      markerId: MarkerId(DateTime.now().toString()),
+      position: _klCenter,
+      icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+      infoWindow: InfoWindow(
+      title: "CONFIRMED FLOOD (Level ${data['severity']})",
+      snippet: data['description'],
+      ),
+    );
+
     setState(() {
-      _markers.add(
-        Marker(
-          markerId: MarkerId(DateTime.now().toString()),
-          position: _klCenter,
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
-          infoWindow: InfoWindow(
-            title: "CONFIRMED FLOOD (Level ${data['severity']})",
-            snippet: data['description'],
-          ),
-        ),
-      );
+      _markers.add(newMarker);
+
+      FloodState.sharedMarkers.add(newMarker);
     });
   }
 
