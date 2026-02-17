@@ -95,6 +95,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Future<void> _handleReportFlood() async {
     // 1. Pick Image
     final XFile? photo = await _picker.pickImage(source: ImageSource.camera);
+    //final XFile? photo = await _picker.pickImage(source: ImageSource.gallery);
     if (photo == null) return;
 
     setState(() => _isAnalyzing = true);
