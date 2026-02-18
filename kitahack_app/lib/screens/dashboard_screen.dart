@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:kitahack_app/services/flood_state.dart';
+import 'package:geolocator/geolocator.dart';
 import '../services/gemini_service.dart';
 import '../services/flood_state.dart';
 
@@ -27,6 +28,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     super.initState();
     _isRescuerMode = widget.isRescuerMode;
     _markers.addAll(FloodState.sharedMarkers);
+    _checkLocationPermission();
   }
 
   // MAP STATE
@@ -71,6 +73,31 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
   ]
   ''';
+
+  Future<void> _checkLocationPermission() async {
+    bool serviceEnabled;
+    LocationPermission permission;
+
+    // 1. Check if GPS is on
+    serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      return;
+    }
+
+    // 2. Check current permission status
+    permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      // 3. Ask the User
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) {
+        return;
+      }
+    }
+
+    if (permission == LocationPermission.deniedForever) {
+      return;
+    }
+  }
 
   void _onMapCreated(GoogleMapController controller) {
     _mapController = controller;
@@ -142,9 +169,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
   // ---- PHASE 3: SAFETY CHATBOT ----
   void _openSafetyChat() {
     TextEditingController _msgController = TextEditingController();
-    List<Map<String, String>> chatHistory = [
-      {"role": "ai", "msg": "I am the KL Crisis Assistant. Are you safe?"}
-    ];
+    // List<Map<String, String>> chatHistory = [
+    //   {"role": "ai", "msg": "I am the KL Crisis Assistant. Are you safe?"}
+    // ];
 
     showModalBottomSheet(
       context: context, 
@@ -206,9 +233,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
               Expanded(
                 child: ListView.builder(
                   padding: const EdgeInsets.all(16),
-                  itemCount: chatHistory.length,
+                  itemCount: FloodState.chatHistory.length,
                   itemBuilder: (ctx, i) {
-                    final isAi = chatHistory[i]["role"] == "ai";
+                    final msg = FloodState.chatHistory[i];
+                    final isAi = msg["role"] == "ai";
                     return Align(
                       alignment: 
                         isAi ? Alignment.centerLeft : Alignment.centerRight,
@@ -219,7 +247,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           color: isAi ? Colors.grey[200] : Colors.blue[100],
                           borderRadius: BorderRadius.circular(15)
                         ),
-                        child: Text(chatHistory[i]["msg"]!),
+                        child: Text(msg["msg"]!),
                       ),
                     );
                   },
@@ -254,14 +282,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         if (text.isEmpty) return;
 
                         setSheetState(() {
-                          chatHistory.add({"role": "user", "msg": text});
+                          FloodState.chatHistory.add({"role": "user", "msg": text});
                           _msgController.clear();
                         });
 
                         final reply = await _geminiService.getSafetyAdvice(text);
 
                         setSheetState(() => 
-                          chatHistory.add({"role": "ai", "msg": reply}));
+                          FloodState.chatHistory.add({"role": "ai", "msg": reply}));
                       },
                     ),
                   ],
@@ -333,6 +361,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
             polylines: _polylines,
             zoomControlsEnabled: false,
             style: _darkMapStyle,
+            myLocationEnabled: true,
+            myLocationButtonEnabled: true,
           ),
 
           // 2: LOADING OVERLAY
