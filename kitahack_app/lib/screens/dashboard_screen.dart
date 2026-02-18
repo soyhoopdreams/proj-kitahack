@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import '../services/gemini_service.dart';
+import '../api/routes_api.dart';
 
 class DashboardScreen extends StatefulWidget {
   final bool isRescuerMode;
@@ -270,32 +271,50 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   // ---- PHASE 4: RESCUE SIMULATION (THE RED LINE) ----
   void _handleRescueRoute() async {
-    setState(() => _isAnalyzing = true);
-    await Future.delayed(const Duration(seconds: 2)); // Fake calculation time
+  setState(() => _isAnalyzing = true);
 
-    setState(() {
-      _isAnalyzing = false;
-      // Draw a Blue Route avoiding the Red Circle
-      _polylines.add(
-        Polyline(
-          polylineId: const PolylineId("safe_route"),
-          color: Colors.blue,
-          width: 5,
-          points: const [
-            LatLng(3.1390, 101.6869), // Start: KLCC
-            LatLng(3.1420, 101.6900),
-            LatLng(3.1480, 101.6920), // Waypoint: Avoiding the flood
-            LatLng(3.1500, 101.6950), // End: Near Masjid Jamek
-          ],
-        ),
+  final result = await RoutesApi.getRoute(
+    originLat: 3.1390,   // rescuer start point (KLCC)
+    originLng: 101.6869,
+    destLat: 3.1500,     // flood zone destination (Masjid Jamek)
+    destLng: 101.6950,
+  );
+
+  if (result != null) {
+    final routes = result['routes'] as List;
+    if (routes.isNotEmpty) {
+      final distance = routes[0]['distanceMeters'];
+      final duration = routes[0]['duration'];
+
+      setState(() {
+        _isAnalyzing = false;
+        // Still draw the blue line on map
+        _polylines.add(
+          Polyline(
+            polylineId: const PolylineId("safe_route"),
+            color: Colors.blue,
+            width: 5,
+            points: const [
+              LatLng(3.1390, 101.6869),
+              LatLng(3.1420, 101.6900),
+              LatLng(3.1480, 101.6920),
+              LatLng(3.1500, 101.6950),
+            ],
+          ),
+        );
+      });
+
+      _showDialog(
+        "ROUTE CALCULATED",
+        "Distance: ${(distance / 1000).toStringAsFixed(1)} km\nETA: $duration\nAvoiding 1 critical flood zone.",
+        false,
       );
-    });
-
-    _showDialog(
-      "ROUTE CALCULATED", 
-      "Optimal path found. Avoiding 1 critical zone.", 
-      false);
+    }
+  } else {
+    setState(() => _isAnalyzing = false);
+    _showDialog("Error", "Could not calculate route. Check API key.", true);
   }
+}
 
   void _showDialog(String title, String body, bool isDanger) {
     showDialog(
