@@ -10,12 +10,12 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  // 1. Initial Camera Position (Masjid Jamek Area)
-  static const LatLng _klCity = LatLng(3.1490, 101.6965);
+  // Default location: KL City Centre (From Farell's branch)
+  static const LatLng _klCity = LatLng(3.1390, 101.6869);
   
   final Completer<GoogleMapController> _controller = Completer();
 
-  // 2. Define the collection to store polygons
+  // Define the collection to store polygons (Your feature)
   final Set<Polygon> _polygons = {};
 
   @override
@@ -24,7 +24,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _setDummyFloodArea(); // Load polygon on startup
   }
 
-  // 3. Create the Dummy Flood Polygon
+  // Create the Dummy Flood Polygon
   void _setDummyFloodArea() {
     List<LatLng> floodPoints = [
       const LatLng(3.1495, 101.6950),
@@ -59,9 +59,8 @@ class _HomeScreenState extends State<HomeScreen> {
         mapType: MapType.normal,
         initialCameraPosition: const CameraPosition(
           target: _klCity,
-          zoom: 15.5,
+          zoom: 14.5, // Zoomed out slightly so you can still see your Masjid Jamek polygon from Farell's KL City center!
         ),
-        // 4. Pass the polygons to the map
         polygons: _polygons, 
         markers: {},
         onMapCreated: (GoogleMapController controller) {
