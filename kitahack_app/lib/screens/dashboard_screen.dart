@@ -121,23 +121,46 @@ class _DashboardScreenState extends State<DashboardScreen> {
     });
   }
 
-  // ---- PHASE 2: VISUAL INTELLIGENCE (CAMERA) ----
+// ---- PHASE 2: VISUAL INTELLIGENCE (CAMERA & GALLERY) ----
   Future<void> _handleReportFlood() async {
-    // 1. Pick Image
-    final XFile? photo = await _picker.pickImage(source: ImageSource.camera);
-    //final XFile? photo = await _picker.pickImage(source: ImageSource.gallery);
+    // 1. Ask User: Camera or Gallery?
+    final ImageSource? source = await showDialog<ImageSource>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Upload Evidence"),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.camera_alt, color: Colors.blue),
+              title: const Text("Take Photo"),
+              onTap: () => Navigator.pop(ctx, ImageSource.camera),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library, color: Colors.orange),
+              title: const Text("Upload from Gallery"),
+              onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (source == null) return; // User canceled
+
+    // 2. Pick the Image
+    final XFile? photo = await _picker.pickImage(source: source);
     if (photo == null) return;
 
     setState(() => _isAnalyzing = true);
 
-    // 2. Send to Gemini
+    // 3. Send to Gemini for 1-5 Severity Rating
     try {
       final result = await _geminiService.analyzeFloodImage(File(photo.path));
 
       if (result['isFlood'] == true) {
-        // 3. If Flood Confirmed, Add Marker
-        _addFloodMarker(result);
-        _showDialog("DANGER CONFIRMED", "Severity: ${result['severity']}/5\n${result['description']}", true);
+        // 4. Ask for Location before dropping the pin
+        await _askForLocationAndAddMarker(result);
       } else {
         _showDialog("Safe", "Gemini did not detect a flood.", false);
       } 
@@ -148,21 +171,101 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
   }
 
-  void _addFloodMarker(Map<String, dynamic> data) {
-    final newMarker = Marker(
-      markerId: MarkerId(DateTime.now().toString()),
-      position: _klCenter,
-      icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
-      infoWindow: InfoWindow(
-      title: "CONFIRMED FLOOD (Level ${data['severity']})",
-      snippet: data['description'],
+  // 5. Ask for Location Dialog
+  Future<void> _askForLocationAndAddMarker(Map<String, dynamic> result) async {
+    LatLng? selectedLocation = await showDialog<LatLng>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Where is this?"),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.my_location, color: Colors.blue),
+              title: const Text("My Current GPS Location"),
+              onTap: () async {
+                try {
+                  Position pos = await Geolocator.getCurrentPosition();
+                  Navigator.pop(ctx, LatLng(pos.latitude, pos.longitude));
+                } catch (e) {
+                  Navigator.pop(ctx, _klCenter); // Fallback if GPS fails
+                }
+              },
+            ),
+            const Divider(),
+            const Text("Hackathon Demo Locations:", style: TextStyle(fontSize: 12, color: Colors.grey)),
+            ListTile(
+              leading: const Icon(Icons.location_on, color: Colors.red),
+              title: const Text("Masjid Jamek"),
+              onTap: () => Navigator.pop(ctx, const LatLng(3.1495, 101.6960)),
+            ),
+            ListTile(
+              leading: const Icon(Icons.location_on, color: Colors.orange),
+              title: const Text("Kampung Baru"),
+              onTap: () => Navigator.pop(ctx, const LatLng(3.1620, 101.7050)),
+            ),
+          ],
+        ),
       ),
+    );
+
+    if (selectedLocation != null) {
+      _addFloodMarker(result, selectedLocation);
+      _showDialog("DANGER CONFIRMED", "Severity: ${result['severity']}/5\n${result['description']}", true);
+    }
+  }
+
+  // 6. Calculate Colors & Add Shapes to Map
+  void _addFloodMarker(Map<String, dynamic> data, LatLng location) {
+    // Parse severity (Default to 1 if missing)
+    int severity = data['severity'] is int ? data['severity'] : int.tryParse(data['severity'].toString()) ?? 1;
+    
+    // Determine Color based on Severity
+    Color sevColor;
+    double markerHue;
+    
+    if (severity <= 2) {
+      sevColor = Colors.yellow;
+      markerHue = BitmapDescriptor.hueYellow;
+    } else if (severity <= 4) {
+      sevColor = Colors.orange;
+      markerHue = BitmapDescriptor.hueOrange;
+    } else {
+      sevColor = Colors.red;
+      markerHue = BitmapDescriptor.hueRed;
+    }
+
+    final String uniqueId = DateTime.now().toString();
+
+    // Create Marker
+    final newMarker = Marker(
+      markerId: MarkerId('marker_$uniqueId'),
+      position: location,
+      icon: BitmapDescriptor.defaultMarkerWithHue(markerHue),
+      infoWindow: InfoWindow(
+        title: "CONFIRMED FLOOD (Level $severity/5)",
+        snippet: data['description'],
+      ),
+    );
+
+    // Create Colored Circle Zone
+    final newCircle = Circle(
+      circleId: CircleId('circle_$uniqueId'),
+      center: location,
+      radius: severity * 50.0, // Higher severity = bigger circle!
+      fillColor: sevColor.withOpacity(0.4),
+      strokeColor: sevColor,
+      strokeWidth: 2,
     );
 
     setState(() {
       _markers.add(newMarker);
-
+      _circles.add(newCircle);
       FloodState.sharedMarkers.add(newMarker);
+      
+      // Pan camera to the new report!
+      _mapController.animateCamera(CameraUpdate.newLatLngZoom(location, 15.5));
     });
   }
 

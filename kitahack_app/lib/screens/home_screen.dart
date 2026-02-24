@@ -26,7 +26,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // Create the Dummy Flood Polygon
   void _setDummyFloodArea() {
-    List<LatLng> floodPoints = [
+    // Original Red Polygon (Masjid Jamek)
+    List<LatLng> floodPoints1 = [
       const LatLng(3.1495, 101.6950),
       const LatLng(3.1505, 101.6960),
       const LatLng(3.1500, 101.6980),
@@ -34,19 +35,40 @@ class _HomeScreenState extends State<HomeScreen> {
       const LatLng(3.1485, 101.6955),
     ];
 
+    // NEW Orange Polygon (Slightly to the North-East)
+    List<LatLng> floodPoints2 = [
+      const LatLng(3.1515, 101.6970),
+      const LatLng(3.1525, 101.6980),
+      const LatLng(3.1520, 101.7000),
+      const LatLng(3.1500, 101.6995),
+      const LatLng(3.1505, 101.6975),
+    ];
+
     setState(() {
+      // Add the first polygon
       _polygons.add(
         Polygon(
           polygonId: const PolygonId('flood_zone_1'),
-          points: floodPoints,
+          points: floodPoints1,
           strokeColor: Colors.red,
           strokeWidth: 2,
           fillColor: Colors.red.withOpacity(0.3), // Transparent red
         ),
       );
+
+      // Add the second test polygon!
+      _polygons.add(
+        Polygon(
+          polygonId: const PolygonId('flood_zone_2_test'),
+          points: floodPoints2,
+          strokeColor: Colors.orange,
+          strokeWidth: 2,
+          fillColor: Colors.orange.withOpacity(0.3), // Transparent orange
+        ),
+      );
     });
   }
-
+  
   @override
   Widget build(BuildContext context) {
     return Scaffold(
