@@ -124,8 +124,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   // ---- PHASE 2: VISUAL INTELLIGENCE (CAMERA) ----
   Future<void> _handleReportFlood() async {
     // 1. Pick Image
-    final XFile? photo = await _picker.pickImage(source: ImageSource.camera);
-    //final XFile? photo = await _picker.pickImage(source: ImageSource.gallery);
+    //final XFile? photo = await _picker.pickImage(source: ImageSource.camera);
+    final XFile? photo = await _picker.pickImage(source: ImageSource.gallery);
     if (photo == null) return;
 
     setState(() => _isAnalyzing = true);
