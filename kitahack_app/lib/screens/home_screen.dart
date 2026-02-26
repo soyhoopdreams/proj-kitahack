@@ -10,7 +10,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   // Default location: KL City Centre
-  static const LatLng _klCity = LatLng(3.140853, 101.693207);
+  static const LatLng _klCity = LatLng(3.1390, 101.6869);
 
   @override
   Widget build(BuildContext context) {
