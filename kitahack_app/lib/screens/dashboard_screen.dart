@@ -18,14 +18,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   static const LatLng _klCenter = LatLng(3.1390, 101.6869);
 
   bool _isAnalyzing = false;
-
   late bool _isRescuerMode;
-
-  @override
-  void initState() {
-    super.initState();
-    _isRescuerMode = widget.isRescuerMode;
-  }
 
   // MAP STATE
   late GoogleMapController _mapController;
@@ -37,113 +30,144 @@ class _DashboardScreenState extends State<DashboardScreen> {
   final GeminiService _geminiService = GeminiService();
   final ImagePicker _picker = ImagePicker();
 
-  // DARK MODE
+  // DARK MAP STYLE
   final String _darkMapStyle = '''
   [
-    {
-      "elementType": "geometry",
-      "stylers": [{"color": "#242f3e"}]
-    },
-    {
-      "elementType": "labels.text.fill",
-      "stylers": [{"color": "#746855"}]
-    },
-    {
-      "elementType": "labels.text.stroke",
-      "stylers": [{"color": "#242f3e"}]
-    },
-    {
-      "featureType": "administrative.locality",
-      "elementType": "labels.text.fill",
-      "stylers": [{"color": "#d59563"}]
-    },
-    {
-      "featureType": "road",
-      "elementType": "geometry",
-      "stylers": [{"color": "#38414e"}]
-    },
-    {
-      "featureType": "water",
-      "elementType": "geometry",
-      "stylers": [{"color": "#17263c"}]
-    }
+    {"elementType": "geometry", "stylers": [{"color": "#242f3e"}]},
+    {"elementType": "labels.text.fill", "stylers": [{"color": "#746855"}]},
+    {"elementType": "labels.text.stroke", "stylers": [{"color": "#242f3e"}]},
+    {"featureType": "administrative.locality", "elementType": "labels.text.fill",
+      "stylers": [{"color": "#d59563"}]},
+    {"featureType": "road", "elementType": "geometry", "stylers": [{"color": "#38414e"}]},
+    {"featureType": "water", "elementType": "geometry", "stylers": [{"color": "#17263c"}]}
   ]
   ''';
+
+  @override
+  void initState() {
+    super.initState();
+    _isRescuerMode = widget.isRescuerMode;
+  }
 
   void _onMapCreated(GoogleMapController controller) {
     _mapController = controller;
     _setupSimulatedData();
   }
 
-  // ---- PHASE 1: MOCK DATA SETUP ----
+  // ---- PHASE 1: DRAW ALL ACTIVE FLOOD ZONES ON MAP ----
   void _setupSimulatedData() {
+    _refreshFloodZonesOnMap();
+  }
+
+  /// Redraws all circles and markers for every zone in RoutesApi.activeFloodZones.
+  /// Called on init AND after each new Gemini-confirmed flood.
+  void _refreshFloodZonesOnMap() {
     setState(() {
-      // Draw a "Red Zone"
-      _circles.add(
-        Circle(
-          circleId: const CircleId("flood_zone"),
-          center: const LatLng(3.1495, 101.6960),
-          radius: 150,
-          fillColor: Colors.red.withValues(alpha: 0.5),
-          strokeColor: Colors.red,
+      _circles.clear();
+
+      for (final zone in RoutesApi.activeFloodZones) {
+        final zoneLatLng = LatLng(zone.lat, zone.lng);
+
+        // Red circle = flood area
+        _circles.add(Circle(
+          circleId: CircleId('zone_${zone.lat}_${zone.lng}'),
+          center: zoneLatLng,
+          radius: zone.radiusMeters,
+          fillColor: _severityColor(zone.severity).withOpacity(0.35),
+          strokeColor: _severityColor(zone.severity),
           strokeWidth: 2,
-        ),
-      );
+        ));
+
+        // Pin on each flood zone
+        _markers.add(Marker(
+          markerId: MarkerId('pin_${zone.lat}_${zone.lng}'),
+          position: zoneLatLng,
+          icon: BitmapDescriptor.defaultMarkerWithHue(
+            zone.severity >= 4
+                ? BitmapDescriptor.hueRed
+                : BitmapDescriptor.hueOrange,
+          ),
+          infoWindow: InfoWindow(
+            title: '⚠️ ${zone.label}',
+            snippet: 'Severity: ${zone.severity}/5 — Route will avoid this',
+          ),
+        ));
+      }
     });
   }
 
-  // ---- PHASE 2: VISUAL INTELLIGENCE (CAMERA) ----
+  /// Returns a color based on flood severity (1=yellow → 5=red)
+  Color _severityColor(int severity) {
+    switch (severity) {
+      case 1: return Colors.yellow;
+      case 2: return Colors.orange;
+      case 3: return Colors.deepOrange;
+      case 4: return Colors.red;
+      case 5: return Colors.red[900]!;
+      default: return Colors.red;
+    }
+  }
+
+  // ---- PHASE 2: AI PHOTO VERIFICATION → AUTO-ADD TO AVOIDANCE LIST ----
   Future<void> _handleReportFlood() async {
-    // 1. Pick Image
-    //final XFile? photo = await _picker.pickImage(source: ImageSource.camera);
     final XFile? photo = await _picker.pickImage(source: ImageSource.gallery);
     if (photo == null) return;
 
     setState(() => _isAnalyzing = true);
 
-    // 2. Send to Gemini
     try {
       final result = await _geminiService.analyzeFloodImage(File(photo.path));
 
       if (result['isFlood'] == true) {
-        // 3. If Flood Confirmed, Add Marker
-        _addFloodMarker(result);
-        _showDialog("DANGER CONFIRMED", "Severity: ${result['severity']}/5\n${result['description']}", true);
+        final severity = result['severity'] as int? ?? 3;
+        final description = result['description'] as String? ?? 'Flood confirmed';
+
+        // ✅ KEY STEP: Gemini confirmed flood → add to route avoidance list
+        // In production this would use the device's real GPS location.
+        // For demo we use a hardcoded "nearby" point slightly offset from centre.
+        const reportedLat = 3.1410;
+        const reportedLng = 101.6880;
+
+        RoutesApi.addFloodZone(
+          reportedLat,
+          reportedLng,
+          severity,
+          'User Report (AI Verified)',
+        );
+
+        // Redraw all flood zones including the new one
+        _refreshFloodZonesOnMap();
+
+        _showDialog(
+          "⚠️ FLOOD CONFIRMED & MAPPED",
+          "Severity: $severity/5\n$description\n\n"
+              "This location has been added to the route avoidance list. "
+              "Future rescue routes will automatically detour around it.",
+          true,
+        );
       } else {
-        _showDialog("Safe", "Gemini did not detect a flood.", false);
-      } 
+        _showDialog(
+          "No Flood Detected",
+          "Gemini did not detect a flood in this image.",
+          false,
+        );
+      }
     } catch (e) {
-      _showDialog("Error", "Could not analyze image. Try again.", false);
+      _showDialog("Error", "Could not analyze image. Please try again.", true);
     } finally {
       setState(() => _isAnalyzing = false);
     }
   }
 
-  void _addFloodMarker(Map<String, dynamic> data) {
-    setState(() {
-      _markers.add(
-        Marker(
-          markerId: MarkerId(DateTime.now().toString()),
-          position: _klCenter,
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
-          infoWindow: InfoWindow(
-            title: "CONFIRMED FLOOD (Level ${data['severity']})",
-            snippet: data['description'],
-          ),
-        ),
-      );
-    });
-  }
-
   // ---- PHASE 3: SAFETY CHATBOT ----
   void _openSafetyChat() {
-    TextEditingController _msgController = TextEditingController();
-    List<Map<String, String>> chatHistory = [
+    final TextEditingController msgController = TextEditingController();
+    final List<Map<String, String>> chatHistory = [
       {"role": "ai", "msg": "I am the KL Crisis Assistant. Are you safe?"}
     ];
 
     showModalBottomSheet(
-      context: context, 
+      context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) => StatefulBuilder(
@@ -151,54 +175,48 @@ class _DashboardScreenState extends State<DashboardScreen> {
           height: MediaQuery.of(context).size.height * 0.7,
           decoration: const BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(25))
+            borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
           ),
           child: Column(
             children: [
-              // Chat Header
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
                   color: Colors.red[50],
-                  borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(25))
+                  borderRadius:
+                      const BorderRadius.vertical(top: Radius.circular(25)),
                 ),
-                child: Row(
-                  children: const [
+                child: const Row(
+                  children: [
                     Icon(Icons.shield, color: Colors.red),
                     SizedBox(width: 10),
-                    Text(
-                      "Official Safety AI (NADMA)", 
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold, 
-                        color: Colors.red)
-                    ),
+                    Text("Official Safety AI (NADMA)",
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold, color: Colors.red)),
                   ],
                 ),
               ),
-              // Ethical Guardrail Banner
               Container(
                 width: double.infinity,
                 color: Colors.amber[100],
-                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-                child: Row(
-                  children: const [
+                padding:
+                    const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+                child: const Row(
+                  children: [
                     Icon(Icons.info_outline, size: 16, color: Colors.brown),
                     SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        "AI can make mistakes. In life-threatening emergencies, call 999 immediately.",
+                        "AI can make mistakes. In emergencies, call 999 immediately.",
                         style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.brown,
-                          fontWeight: FontWeight.bold
-                        ),
-                      )
+                            fontSize: 12,
+                            color: Colors.brown,
+                            fontWeight: FontWeight.bold),
+                      ),
                     ),
                   ],
                 ),
               ),
-              // Chat List
               Expanded(
                 child: ListView.builder(
                   padding: const EdgeInsets.all(16),
@@ -206,14 +224,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   itemBuilder: (ctx, i) {
                     final isAi = chatHistory[i]["role"] == "ai";
                     return Align(
-                      alignment: 
-                        isAi ? Alignment.centerLeft : Alignment.centerRight,
+                      alignment: isAi
+                          ? Alignment.centerLeft
+                          : Alignment.centerRight,
                       child: Container(
                         margin: const EdgeInsets.only(bottom: 10),
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
                           color: isAi ? Colors.grey[200] : Colors.blue[100],
-                          borderRadius: BorderRadius.circular(15)
+                          borderRadius: BorderRadius.circular(15),
                         ),
                         child: Text(chatHistory[i]["msg"]!),
                       ),
@@ -221,22 +240,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   },
                 ),
               ),
-              // Input Field
               Padding(
                 padding: EdgeInsets.only(
                   bottom: MediaQuery.of(context).viewInsets.bottom + 16,
                   left: 16,
-                  right: 16
+                  right: 16,
                 ),
                 child: Row(
                   children: [
                     Expanded(
                       child: TextField(
-                        controller: _msgController,
+                        controller: msgController,
                         decoration: const InputDecoration(
                           hintText: "Ask for help...",
                           border: OutlineInputBorder(
-                            borderRadius: BorderRadius.all(Radius.circular(50))
+                            borderRadius:
+                                BorderRadius.all(Radius.circular(50)),
                           ),
                         ),
                       ),
@@ -246,18 +265,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       backgroundColor: Colors.red,
                       child: const Icon(Icons.send, color: Colors.white),
                       onPressed: () async {
-                        final text = _msgController.text.trim();
+                        final text = msgController.text.trim();
                         if (text.isEmpty) return;
-
                         setSheetState(() {
                           chatHistory.add({"role": "user", "msg": text});
-                          _msgController.clear();
+                          msgController.clear();
                         });
-
-                        final reply = await _geminiService.getSafetyAdvice(text);
-
-                        setSheetState(() => 
-                          chatHistory.add({"role": "ai", "msg": reply}));
+                        final reply =
+                            await _geminiService.getSafetyAdvice(text);
+                        setSheetState(() =>
+                            chatHistory.add({"role": "ai", "msg": reply}));
                       },
                     ),
                   ],
@@ -270,64 +287,140 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  // ---- PHASE 4: RESCUE SIMULATION (THE RED LINE) ----
+  // ---- PHASE 4: RESCUE ROUTE WITH AUTOMATIC FLOOD AVOIDANCE ----
   void _handleRescueRoute() async {
-  setState(() => _isAnalyzing = true);
+    setState(() {
+      _isAnalyzing = true;
+      _polylines.clear();
+    });
 
-  final result = await RoutesApi.getRoute(
-    originLat: 3.1390,   // rescuer start point (KLCC)
-    originLng: 101.6869,
-    destLat: 3.1500,     // flood zone destination (Masjid Jamek)
-    destLng: 101.6950,
-  );
+    final result = await RoutesApi.getRoute(
+      originLat: 3.1390, // Rescuer: KLCC
+      originLng: 101.6869,
+      destLat: 3.1500,   // Destination: Masjid Jamek flood zone
+      destLng: 101.6950,
+    );
 
-  if (result != null) {
-    final routes = result['routes'] as List;
-    if (routes.isNotEmpty) {
-      final distance = routes[0]['distanceMeters'];
-      final duration = routes[0]['duration'];
+    setState(() => _isAnalyzing = false);
 
-      setState(() {
-        _isAnalyzing = false;
-        // Still draw the blue line on map
-        _polylines.add(
-          Polyline(
-            polylineId: const PolylineId("safe_route"),
-            color: Colors.blue,
-            width: 5,
-            points: const [
-              LatLng(3.1390, 101.6869),
-              LatLng(3.1420, 101.6900),
-              LatLng(3.1480, 101.6920),
-              LatLng(3.1500, 101.6950),
-            ],
-          ),
-        );
-      });
+    if (result != null) {
+      final routes = result['routes'] as List?;
+      final avoidedCount = result['_avoidedZones'] as int? ?? 0;
+      final detourApplied = result['_detourApplied'] as bool? ?? false;
 
+      if (routes != null && routes.isNotEmpty) {
+        final route = routes[0];
+        final distanceMeters = route['distanceMeters'] ?? 0;
+        final duration = route['duration'] ?? 'N/A';
+        final encodedPolyline =
+            route['polyline']?['encodedPolyline'] as String?;
+
+        if (encodedPolyline != null && encodedPolyline.isNotEmpty) {
+          final decodedPoints = RoutesApi.decodePolyline(encodedPolyline);
+          final latLngPoints =
+              decodedPoints.map((p) => LatLng(p[0], p[1])).toList();
+
+          setState(() {
+            _polylines.add(Polyline(
+              polylineId: const PolylineId("safe_route"),
+              // Blue = safe detoured route, green = direct (no floods in way)
+              color: detourApplied ? Colors.blue : Colors.green,
+              width: 5,
+              points: latLngPoints,
+            ));
+          });
+
+          // Fit camera to show the full route
+          _mapController.animateCamera(
+            CameraUpdate.newLatLngBounds(
+              _boundsFromLatLngList(latLngPoints),
+              80,
+            ),
+          );
+        } else {
+          _drawFallbackRoute();
+        }
+
+        // Build a clear summary message for the rescuer
+        String routeMsg =
+            "Distance: ${(distanceMeters / 1000).toStringAsFixed(1)} km\n"
+            "ETA: $duration\n\n";
+
+        if (detourApplied) {
+          routeMsg +=
+              "⚠️ Detour applied — avoided $avoidedCount flood zone(s).\n"
+              "Route shown in BLUE.\n"
+              "This is the fastest safe path.";
+        } else {
+          routeMsg +=
+              "✅ No flood zones blocking direct route.\n"
+              "Route shown in GREEN.";
+        }
+
+        _showDialog("ROUTE CALCULATED", routeMsg, false);
+      } else {
+        _drawFallbackRoute();
+        _showDialog("No Route Found", "API returned no routes.", true);
+      }
+    } else {
+      _drawFallbackRoute();
       _showDialog(
-        "ROUTE CALCULATED",
-        "Distance: ${(distance / 1000).toStringAsFixed(1)} km\nETA: $duration\nAvoiding 1 critical flood zone.",
-        false,
+        "Route Unavailable",
+        "Could not connect to Routes API.\n\n"
+            "Check:\n"
+            "• API key in routes_api.dart\n"
+            "• Routes API enabled in Cloud Console\n"
+            "• Billing active on project",
+        true,
       );
     }
-  } else {
-    setState(() => _isAnalyzing = false);
-    _showDialog("Error", "Could not calculate route. Check API key.", true);
   }
-}
+
+  void _drawFallbackRoute() {
+    setState(() {
+      _polylines.add(const Polyline(
+        polylineId: PolylineId("fallback_route"),
+        color: Colors.blueGrey,
+        width: 4,
+        points: [
+          LatLng(3.1390, 101.6869),
+          LatLng(3.1420, 101.6900),
+          LatLng(3.1460, 101.6920),
+          LatLng(3.1500, 101.6950),
+        ],
+      ));
+    });
+  }
+
+  LatLngBounds _boundsFromLatLngList(List<LatLng> list) {
+    double minLat = list.first.latitude;
+    double maxLat = list.first.latitude;
+    double minLng = list.first.longitude;
+    double maxLng = list.first.longitude;
+    for (final p in list) {
+      if (p.latitude < minLat) minLat = p.latitude;
+      if (p.latitude > maxLat) maxLat = p.latitude;
+      if (p.longitude < minLng) minLng = p.longitude;
+      if (p.longitude > maxLng) maxLng = p.longitude;
+    }
+    return LatLngBounds(
+      southwest: LatLng(minLat, minLng),
+      northeast: LatLng(maxLat, maxLng),
+    );
+  }
 
   void _showDialog(String title, String body, bool isDanger) {
     showDialog(
-      context: context, 
+      context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(title, style: TextStyle(color: isDanger ? Colors.red : Colors.green)),
+        title: Text(title,
+            style: TextStyle(color: isDanger ? Colors.red : Colors.green)),
         content: Text(body),
-        actions: [TextButton(
-          onPressed: () => Navigator.pop(ctx), 
-          child: const Text("OK"))
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text("OK"))
         ],
-      )
+      ),
     );
   }
 
@@ -336,12 +429,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return Scaffold(
       body: Stack(
         children: [
-          // 1: THE GOOGLE MAP BASE LAYER
+          // 1: GOOGLE MAP
           GoogleMap(
             onMapCreated: _onMapCreated,
-            initialCameraPosition: const CameraPosition(
-              target: _klCenter,
-              zoom: 15),
+            initialCameraPosition:
+                const CameraPosition(target: _klCenter, zoom: 15),
             markers: _markers,
             circles: _circles,
             polylines: _polylines,
@@ -353,51 +445,54 @@ class _DashboardScreenState extends State<DashboardScreen> {
           if (_isAnalyzing)
             Container(
               color: Colors.black54,
-              child: const Center(
-                child: CircularProgressIndicator(color: Colors.white),
-              ),
-            ), 
+              child:
+                  const Center(child: CircularProgressIndicator(color: Colors.white)),
+            ),
 
-          // 3: TOP BAR (BACK BUTTON + MODE INDICATOR)
+          // 3: TOP BAR
           SafeArea(
             child: Padding(
-              padding: const EdgeInsetsGeometry.symmetric(horizontal: 16, vertical: 10),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               child: Row(
                 children: [
-                  // Back Button
                   FloatingActionButton.small(
                     heroTag: "back_btn",
                     backgroundColor: Colors.white,
-                    child: const Icon(Icons.arrow_back, color: Colors.black87),
-                    onPressed: () {
-                      Navigator.pop(context);
-                    },
+                    child:
+                        const Icon(Icons.arrow_back, color: Colors.black87),
+                    onPressed: () => Navigator.pop(context),
                   ),
-
                   const Spacer(),
-
-                  // Mode Label
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 20, vertical: 8),
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(30),
-                      boxShadow: [const BoxShadow(blurRadius: 10, color: Colors.black26)],
+                      boxShadow: const [
+                        BoxShadow(blurRadius: 10, color: Colors.black26)
+                      ],
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(
                           _isRescuerMode ? Icons.shield : Icons.person,
-                          color: _isRescuerMode ? Colors.red : Colors.blue,
+                          color:
+                              _isRescuerMode ? Colors.red : Colors.blue,
                           size: 20,
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          _isRescuerMode ? "RESCUER MODE" : "CIVILIAN MODE",
+                          _isRescuerMode
+                              ? "RESCUER MODE"
+                              : "CIVILIAN MODE",
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
-                            color: _isRescuerMode ? Colors.red : Colors.blue
+                            color: _isRescuerMode
+                                ? Colors.red
+                                : Colors.blue,
                           ),
                         ),
                       ],
@@ -408,78 +503,94 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
           ),
 
-
-          // 4: THE ACTION PANEL
+          // 4: ACTION PANEL
           Positioned(
             bottom: 30,
             left: 20,
             right: 20,
-            child: _isRescuerMode ? 
-              _buildRescuerControls() : _buildUserControls(),
+            child: _isRescuerMode
+                ? _buildRescuerControls()
+                : _buildUserControls(),
           ),
         ],
       ),
     );
   }
 
-  // ---- UI FOR RESCUE MODE ----
   Widget _buildRescuerControls() {
+    final zoneCount = RoutesApi.activeFloodZones.length;
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
-        boxShadow: [const BoxShadow(blurRadius: 15, color: Colors.black26)],
+        boxShadow: const [BoxShadow(blurRadius: 15, color: Colors.black26)],
       ),
       child: Column(
-        //crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: const [
+          const Row(
+            children: [
               Icon(Icons.warning, color: Colors.red),
               SizedBox(width: 10),
-              Text("COMMAND CENTER", style: TextStyle(
-                fontWeight: FontWeight.bold, fontSize: 16)),
-            ]),
+              Text("COMMAND CENTER",
+                  style: TextStyle(
+                      fontWeight: FontWeight.bold, fontSize: 16)),
+            ],
+          ),
           const Divider(),
           const ListTile(
             contentPadding: EdgeInsets.zero,
             title: Text("Masjid Jamek (Zone A)"),
             subtitle: Text("Water Depth: 1.2m"),
-            trailing: Text("CRITICAL", style: TextStyle(
-              color: Colors.red, fontWeight: FontWeight.bold)),
+            trailing: Text("CRITICAL",
+                style: TextStyle(
+                    color: Colors.red, fontWeight: FontWeight.bold)),
           ),
-          //const SizedBox(height: 10),
+          // Shows how many zones the router is currently avoiding
+          Container(
+            width: double.infinity,
+            padding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            margin: const EdgeInsets.only(bottom: 12),
+            decoration: BoxDecoration(
+              color: Colors.orange[50],
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.orange),
+            ),
+            child: Text(
+              "🚧 Routing around $zoneCount active flood zone(s)",
+              style: const TextStyle(
+                  fontSize: 13,
+                  color: Colors.deepOrange,
+                  fontWeight: FontWeight.bold),
+            ),
+          ),
           ElevatedButton(
             onPressed: _handleRescueRoute,
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.red[800],
               foregroundColor: Colors.white,
               minimumSize: const Size(double.infinity, 50),
-            ), 
+            ),
             child: const Text("CALCULATE FASTEST RESCUE ROUTE"),
-          )
+          ),
         ],
       ),
     );
   }
 
-  // ---- UI FOR CIVILIAN MODE ----
   Widget _buildUserControls() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
-        // Chatbot Floating Button
         FloatingActionButton.extended(
-          onPressed: _openSafetyChat, 
+          onPressed: _openSafetyChat,
           label: const Text("Safety AI"),
           icon: const Icon(Icons.chat_bubble),
           backgroundColor: Colors.blueAccent,
           foregroundColor: Colors.white,
         ),
         const SizedBox(height: 15),
-
-        // Report Flood Button
         SizedBox(
           width: double.infinity,
           child: ElevatedButton.icon(
@@ -489,16 +600,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
               backgroundColor: Colors.orange,
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(vertical: 16),
-              // textStyle: const TextStyle(
-              //   fontSize: 16, 
-              //   fontWeight: FontWeight.bold),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(15)),
+                  borderRadius: BorderRadius.circular(15)),
             ),
             onPressed: _handleReportFlood,
           ),
         ),
       ],
     );
-  }  
+  }
 }
