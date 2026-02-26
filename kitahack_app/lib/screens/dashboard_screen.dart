@@ -4,6 +4,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:kitahack_app/services/flood_state.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:geocoding/geocoding.dart';
 import '../services/gemini_service.dart';
 import '../services/flood_state.dart';
 
@@ -28,6 +29,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     super.initState();
     _isRescuerMode = widget.isRescuerMode;
     _markers.addAll(FloodState.sharedMarkers);
+    _circles.addAll(FloodState.sharedCircles);
     _checkLocationPermission();
   }
 
@@ -171,69 +173,136 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
   }
 
-  // 5. Ask for Location Dialog
+  // 5. Ask for Location Dialog (Upgraded with GPS & Text Search)
   Future<void> _askForLocationAndAddMarker(Map<String, dynamic> result) async {
+    TextEditingController _locationController = TextEditingController();
+    bool _isLoading = false; // Controls the loading spinner
+
     LatLng? selectedLocation = await showDialog<LatLng>(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        title: const Text("Where is this?"),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.my_location, color: Colors.blue),
-              title: const Text("My Current GPS Location"),
-              onTap: () async {
-                try {
-                  Position pos = await Geolocator.getCurrentPosition();
-                  Navigator.pop(ctx, LatLng(pos.latitude, pos.longitude));
-                } catch (e) {
-                  Navigator.pop(ctx, _klCenter); // Fallback if GPS fails
-                }
-              },
+      builder: (ctx) => StatefulBuilder( // StatefulBuilder allows the dialog to update live
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            title: const Text("Where is the flood?"),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // ---- OPTION 1: GPS BUTTON ----
+                ListTile(
+                  leading: const Icon(Icons.my_location, color: Colors.blue),
+                  title: const Text("Use Current GPS Location"),
+                  onTap: () async {
+                    setDialogState(() => _isLoading = true);
+                    try {
+                      Position pos = await Geolocator.getCurrentPosition(
+                        desiredAccuracy: LocationAccuracy.high
+                      );
+                      Navigator.pop(ctx, LatLng(pos.latitude, pos.longitude));
+                    } catch (e) {
+                      setDialogState(() => _isLoading = false);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text("GPS failed. Try typing the address.")),
+                      );
+                    }
+                  },
+                ),
+                
+                const Divider(),
+                const Text("OR Type Location:", style: TextStyle(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 10),
+                
+                // ---- OPTION 2: TEXT INPUT ----
+                TextField(
+                  controller: _locationController,
+                  decoration: const InputDecoration(
+                    hintText: "e.g., KLCC, Bukit Bintang...",
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.search),
+                  ),
+                ),
+                const SizedBox(height: 15),
+
+                // ---- SEARCH BUTTON / SPINNER ----
+                if (_isLoading) 
+                  const CircularProgressIndicator()
+                else 
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.orange,
+                      foregroundColor: Colors.white,
+                      minimumSize: const Size(double.infinity, 45),
+                    ),
+                    onPressed: () async {
+                      if (_locationController.text.trim().isEmpty) return;
+                      
+                      setDialogState(() => _isLoading = true);
+                      try {
+                        // Translate text into coordinates!
+                        List<Location> locations = await locationFromAddress(_locationController.text);
+                        if (locations.isNotEmpty) {
+                          Navigator.pop(ctx, LatLng(locations.first.latitude, locations.first.longitude));
+                        }
+                      } catch (e) {
+                        setDialogState(() => _isLoading = false);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text("Location not found. Please try another name.")),
+                        );
+                      }
+                    },
+                    child: const Text("Search & Use Address"),
+                  )
+              ],
             ),
-            const Divider(),
-            const Text("Hackathon Demo Locations:", style: TextStyle(fontSize: 12, color: Colors.grey)),
-            ListTile(
-              leading: const Icon(Icons.location_on, color: Colors.red),
-              title: const Text("Masjid Jamek"),
-              onTap: () => Navigator.pop(ctx, const LatLng(3.1495, 101.6960)),
-            ),
-            ListTile(
-              leading: const Icon(Icons.location_on, color: Colors.orange),
-              title: const Text("Kampung Baru"),
-              onTap: () => Navigator.pop(ctx, const LatLng(3.1620, 101.7050)),
-            ),
-          ],
-        ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, null), // Cancel button
+                child: const Text("Cancel", style: TextStyle(color: Colors.red)),
+              )
+            ],
+          );
+        }
       ),
     );
 
+    // If they picked a location, drop the pin!
     if (selectedLocation != null) {
       _addFloodMarker(result, selectedLocation);
       _showDialog("DANGER CONFIRMED", "Severity: ${result['severity']}/5\n${result['description']}", true);
     }
   }
 
-  // 6. Calculate Colors & Add Shapes to Map
+ // 6. Calculate Colors & Add Shapes to Map
   void _addFloodMarker(Map<String, dynamic> data, LatLng location) {
     // Parse severity (Default to 1 if missing)
     int severity = data['severity'] is int ? data['severity'] : int.tryParse(data['severity'].toString()) ?? 1;
     
-    // Determine Color based on Severity
+    // Determine Color based on Severity (Green to Red Scale)
     Color sevColor;
     double markerHue;
     
-    if (severity <= 2) {
-      sevColor = Colors.yellow;
-      markerHue = BitmapDescriptor.hueYellow;
-    } else if (severity <= 4) {
-      sevColor = Colors.orange;
-      markerHue = BitmapDescriptor.hueOrange;
-    } else {
-      sevColor = Colors.red;
-      markerHue = BitmapDescriptor.hueRed;
+    switch (severity) {
+      case 1:
+        sevColor = Colors.green;
+        markerHue = BitmapDescriptor.hueGreen; // 120.0
+        break;
+      case 2:
+        sevColor = Colors.lightGreen;
+        markerHue = 90.0; // A lime color between Green and Yellow
+        break;
+      case 3:
+        sevColor = Colors.yellow;
+        markerHue = BitmapDescriptor.hueYellow; // 60.0
+        break;
+      case 4:
+        sevColor = Colors.orange;
+        markerHue = BitmapDescriptor.hueOrange; // 30.0
+        break;
+      case 5:
+      default:
+        sevColor = Colors.red;
+        markerHue = BitmapDescriptor.hueRed; // 0.0
+        break;
     }
 
     final String uniqueId = DateTime.now().toString();
@@ -262,13 +331,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
     setState(() {
       _markers.add(newMarker);
       _circles.add(newCircle);
+      
+      // Save both to global memory so Rescuer Mode sees them!
       FloodState.sharedMarkers.add(newMarker);
+      FloodState.sharedCircles.add(newCircle); 
       
       // Pan camera to the new report!
       _mapController.animateCamera(CameraUpdate.newLatLngZoom(location, 15.5));
     });
   }
-
+  
   // ---- PHASE 3: SAFETY CHATBOT ----
   void _openSafetyChat() {
     TextEditingController _msgController = TextEditingController();

@@ -18,10 +18,16 @@ class GeminiService {
     );
 
     final prompt = TextPart(
-      "Analyze this image for flood detection. "
-      "Return ONLY a raw JSON string (no markdown, no backticks) with this structure: "
-      "{ \"isFlood\": true/false, \"severity\": 1-5, \"depth\": \"estimated depth in meters\", \"description\": \"short summary\" }. "
-      "If it is not a flood, set isFlood to false."
+    "Analyze this image for flood detection. "
+    "Evaluate the severity rating using this general rubric: "
+    "1: Minor water pooling, ankle-deep, mostly safe. "
+    "2: Calf-to-knee deep, roads flooded, vehicles having difficulty. "
+    "3: Knee-deep or higher, roads completely impassable, water covering sidewalks or approaching buildings. "
+    "4: Deep water, vehicles partially or fully submerged, clear property damage. "
+    "5: Catastrophic, widespread deep water, or dangerous currents. "
+    "Return ONLY a raw JSON string (no markdown, no backticks) with this structure: "
+    "{ \"isFlood\": true/false, \"severity\": 1-5, \"depth\": \"estimated depth in meters\", \"description\": \"short summary\" }. "
+    "If it is not a flood, set isFlood to false."
     );
 
     final imageBytes = await imageFile.readAsBytes();
