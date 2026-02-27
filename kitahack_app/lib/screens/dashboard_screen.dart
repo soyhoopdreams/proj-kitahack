@@ -2,6 +2,9 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:kitahack_app/services/flood_state.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:geocoding/geocoding.dart';
 import '../services/gemini_service.dart';
 import '../api/routes_api.dart';
 
@@ -19,6 +22,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   bool _isAnalyzing = false;
   late bool _isRescuerMode;
+
+  @override
+  void initState() {
+    super.initState();
+    _isRescuerMode = widget.isRescuerMode;
+    _markers.addAll(FloodState.sharedMarkers);
+    _circles.addAll(FloodState.sharedCircles);
+    _checkLocationPermission();
+  }
 
   // MAP STATE
   late GoogleMapController _mapController;
@@ -96,55 +108,46 @@ class _DashboardScreenState extends State<DashboardScreen> {
     });
   }
 
-  /// Returns a color based on flood severity (1=yellow → 5=red)
-  Color _severityColor(int severity) {
-    switch (severity) {
-      case 1: return Colors.yellow;
-      case 2: return Colors.orange;
-      case 3: return Colors.deepOrange;
-      case 4: return Colors.red;
-      case 5: return Colors.red[900]!;
-      default: return Colors.red;
-    }
-  }
-
-  // ---- PHASE 2: AI PHOTO VERIFICATION → AUTO-ADD TO AVOIDANCE LIST ----
+// ---- PHASE 2: VISUAL INTELLIGENCE (CAMERA & GALLERY) ----
   Future<void> _handleReportFlood() async {
-    final XFile? photo = await _picker.pickImage(source: ImageSource.gallery);
+    // 1. Ask User: Camera or Gallery?
+    final ImageSource? source = await showDialog<ImageSource>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Upload Evidence"),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.camera_alt, color: Colors.blue),
+              title: const Text("Take Photo"),
+              onTap: () => Navigator.pop(ctx, ImageSource.camera),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library, color: Colors.orange),
+              title: const Text("Upload from Gallery"),
+              onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (source == null) return; // User canceled
+
+    // 2. Pick the Image
+    final XFile? photo = await _picker.pickImage(source: source);
     if (photo == null) return;
 
     setState(() => _isAnalyzing = true);
 
+    // 3. Send to Gemini for 1-5 Severity Rating
     try {
       final result = await _geminiService.analyzeFloodImage(File(photo.path));
 
       if (result['isFlood'] == true) {
-        final severity = result['severity'] as int? ?? 3;
-        final description = result['description'] as String? ?? 'Flood confirmed';
-
-        // ✅ KEY STEP: Gemini confirmed flood → add to route avoidance list
-        // In production this would use the device's real GPS location.
-        // For demo we use a hardcoded "nearby" point slightly offset from centre.
-        const reportedLat = 3.1410;
-        const reportedLng = 101.6880;
-
-        RoutesApi.addFloodZone(
-          reportedLat,
-          reportedLng,
-          severity,
-          'User Report (AI Verified)',
-        );
-
-        // Redraw all flood zones including the new one
-        _refreshFloodZonesOnMap();
-
-        _showDialog(
-          "⚠️ FLOOD CONFIRMED & MAPPED",
-          "Severity: $severity/5\n$description\n\n"
-              "This location has been added to the route avoidance list. "
-              "Future rescue routes will automatically detour around it.",
-          true,
-        );
+        // 4. Ask for Location before dropping the pin
+        await _askForLocationAndAddMarker(result);
       } else {
         _showDialog(
           "No Flood Detected",
@@ -159,6 +162,174 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
   }
 
+  // 5. Ask for Location Dialog (Upgraded with GPS & Text Search)
+  Future<void> _askForLocationAndAddMarker(Map<String, dynamic> result) async {
+    TextEditingController _locationController = TextEditingController();
+    bool _isLoading = false; // Controls the loading spinner
+
+    LatLng? selectedLocation = await showDialog<LatLng>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder( // StatefulBuilder allows the dialog to update live
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            title: const Text("Where is the flood?"),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // ---- OPTION 1: GPS BUTTON ----
+                ListTile(
+                  leading: const Icon(Icons.my_location, color: Colors.blue),
+                  title: const Text("Use Current GPS Location"),
+                  onTap: () async {
+                    setDialogState(() => _isLoading = true);
+                    try {
+                      Position pos = await Geolocator.getCurrentPosition(
+                        desiredAccuracy: LocationAccuracy.high
+                      );
+                      Navigator.pop(ctx, LatLng(pos.latitude, pos.longitude));
+                    } catch (e) {
+                      setDialogState(() => _isLoading = false);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text("GPS failed. Try typing the address.")),
+                      );
+                    }
+                  },
+                ),
+                
+                const Divider(),
+                const Text("OR Type Location:", style: TextStyle(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 10),
+                
+                // ---- OPTION 2: TEXT INPUT ----
+                TextField(
+                  controller: _locationController,
+                  decoration: const InputDecoration(
+                    hintText: "e.g., KLCC, Bukit Bintang...",
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.search),
+                  ),
+                ),
+                const SizedBox(height: 15),
+
+                // ---- SEARCH BUTTON / SPINNER ----
+                if (_isLoading) 
+                  const CircularProgressIndicator()
+                else 
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.orange,
+                      foregroundColor: Colors.white,
+                      minimumSize: const Size(double.infinity, 45),
+                    ),
+                    onPressed: () async {
+                      if (_locationController.text.trim().isEmpty) return;
+                      
+                      setDialogState(() => _isLoading = true);
+                      try {
+                        // Translate text into coordinates!
+                        List<Location> locations = await locationFromAddress(_locationController.text);
+                        if (locations.isNotEmpty) {
+                          Navigator.pop(ctx, LatLng(locations.first.latitude, locations.first.longitude));
+                        }
+                      } catch (e) {
+                        setDialogState(() => _isLoading = false);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text("Location not found. Please try another name.")),
+                        );
+                      }
+                    },
+                    child: const Text("Search & Use Address"),
+                  )
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, null), // Cancel button
+                child: const Text("Cancel", style: TextStyle(color: Colors.red)),
+              )
+            ],
+          );
+        }
+      ),
+    );
+
+    // If they picked a location, drop the pin!
+    if (selectedLocation != null) {
+      _addFloodMarker(result, selectedLocation);
+      _showDialog("DANGER CONFIRMED", "Severity: ${result['severity']}/5\n${result['description']}", true);
+    }
+  }
+
+ // 6. Calculate Colors & Add Shapes to Map
+  void _addFloodMarker(Map<String, dynamic> data, LatLng location) {
+    // Parse severity (Default to 1 if missing)
+    int severity = data['severity'] is int ? data['severity'] : int.tryParse(data['severity'].toString()) ?? 1;
+    
+    // Determine Color based on Severity (Green to Red Scale)
+    Color sevColor;
+    double markerHue;
+    
+    switch (severity) {
+      case 1:
+        sevColor = Colors.green;
+        markerHue = BitmapDescriptor.hueGreen; // 120.0
+        break;
+      case 2:
+        sevColor = Colors.lightGreen;
+        markerHue = 90.0; // A lime color between Green and Yellow
+        break;
+      case 3:
+        sevColor = Colors.yellow;
+        markerHue = BitmapDescriptor.hueYellow; // 60.0
+        break;
+      case 4:
+        sevColor = Colors.orange;
+        markerHue = BitmapDescriptor.hueOrange; // 30.0
+        break;
+      case 5:
+      default:
+        sevColor = Colors.red;
+        markerHue = BitmapDescriptor.hueRed; // 0.0
+        break;
+    }
+
+    final String uniqueId = DateTime.now().toString();
+
+    // Create Marker
+    final newMarker = Marker(
+      markerId: MarkerId('marker_$uniqueId'),
+      position: location,
+      icon: BitmapDescriptor.defaultMarkerWithHue(markerHue),
+      infoWindow: InfoWindow(
+        title: "CONFIRMED FLOOD (Level $severity/5)",
+        snippet: data['description'],
+      ),
+    );
+
+    // Create Colored Circle Zone
+    final newCircle = Circle(
+      circleId: CircleId('circle_$uniqueId'),
+      center: location,
+      radius: severity * 50.0, // Higher severity = bigger circle!
+      fillColor: sevColor.withOpacity(0.4),
+      strokeColor: sevColor,
+      strokeWidth: 2,
+    );
+
+    setState(() {
+      _markers.add(newMarker);
+      _circles.add(newCircle);
+      
+      // Save both to global memory so Rescuer Mode sees them!
+      FloodState.sharedMarkers.add(newMarker);
+      FloodState.sharedCircles.add(newCircle); 
+      
+      // Pan camera to the new report!
+      _mapController.animateCamera(CameraUpdate.newLatLngZoom(location, 15.5));
+    });
+  }
+  
   // ---- PHASE 3: SAFETY CHATBOT ----
   void _openSafetyChat() {
     final TextEditingController msgController = TextEditingController();
