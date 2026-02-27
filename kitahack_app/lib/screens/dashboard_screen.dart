@@ -55,10 +55,29 @@ class _DashboardScreenState extends State<DashboardScreen> {
   ]
   ''';
 
-  @override
-  void initState() {
-    super.initState();
-    _isRescuerMode = widget.isRescuerMode;
+  Future<void> _checkLocationPermission() async {
+    bool serviceEnabled;
+    LocationPermission permission;
+
+    // 1. Check if GPS is on
+    serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      return;
+    }
+
+    // 2. Check current permission status
+    permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      // 3. Ask the User
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) {
+        return;
+      }
+    }
+
+    if (permission == LocationPermission.deniedForever) {
+      return;
+    }
   }
 
   void _onMapCreated(GoogleMapController controller) {
@@ -66,45 +85,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
     _setupSimulatedData();
   }
 
-  // ---- PHASE 1: DRAW ALL ACTIVE FLOOD ZONES ON MAP ----
+  // ---- PHASE 1: MOCK DATA SETUP ----
   void _setupSimulatedData() {
-    _refreshFloodZonesOnMap();
-  }
-
-  /// Redraws all circles and markers for every zone in RoutesApi.activeFloodZones.
-  /// Called on init AND after each new Gemini-confirmed flood.
-  void _refreshFloodZonesOnMap() {
     setState(() {
-      _circles.clear();
-
-      for (final zone in RoutesApi.activeFloodZones) {
-        final zoneLatLng = LatLng(zone.lat, zone.lng);
-
-        // Red circle = flood area
-        _circles.add(Circle(
-          circleId: CircleId('zone_${zone.lat}_${zone.lng}'),
-          center: zoneLatLng,
-          radius: zone.radiusMeters,
-          fillColor: _severityColor(zone.severity).withOpacity(0.35),
-          strokeColor: _severityColor(zone.severity),
+      // Draw a "Red Zone"
+      _circles.add(
+        Circle(
+          circleId: const CircleId("flood_zone"),
+          center: const LatLng(3.1495, 101.6960),
+          radius: 150,
+          fillColor: Colors.red.withValues(alpha: 0.5),
+          strokeColor: Colors.red,
           strokeWidth: 2,
-        ));
-
-        // Pin on each flood zone
-        _markers.add(Marker(
-          markerId: MarkerId('pin_${zone.lat}_${zone.lng}'),
-          position: zoneLatLng,
-          icon: BitmapDescriptor.defaultMarkerWithHue(
-            zone.severity >= 4
-                ? BitmapDescriptor.hueRed
-                : BitmapDescriptor.hueOrange,
-          ),
-          infoWindow: InfoWindow(
-            title: '⚠️ ${zone.label}',
-            snippet: 'Severity: ${zone.severity}/5 — Route will avoid this',
-          ),
-        ));
-      }
+        ),
+      );
     });
   }
 
@@ -149,14 +143,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
         // 4. Ask for Location before dropping the pin
         await _askForLocationAndAddMarker(result);
       } else {
-        _showDialog(
-          "No Flood Detected",
-          "Gemini did not detect a flood in this image.",
-          false,
-        );
-      }
+        _showDialog("Safe", "Gemini did not detect a flood.", false);
+      } 
     } catch (e) {
-      _showDialog("Error", "Could not analyze image. Please try again.", true);
+      _showDialog("Error", "Could not analyze image. Try again.", false);
     } finally {
       setState(() => _isAnalyzing = false);
     }
